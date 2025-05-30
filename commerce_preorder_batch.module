@@ -1,0 +1,123 @@
+<?php
+
+/**
+ * @file
+ * Contains commerce_preorder_batch.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\commerce_product\Entity\ProductVariationInterface;
+use Drupal\commerce_order\Entity\OrderInterface;
+use Drupal\commerce_preorder_batch\Entity\PreorderBatch;
+
+/**
+ * Implements hook_help().
+ */
+function commerce_preorder_batch_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.commerce_preorder_batch':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Commerce Pre-order Batch module enables customers to place pre-orders for out-of-stock products, organized in production batches with shipping dates.') . '</p>';
+      $output .= '<h3>' . t('Key Features') . '</h3>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('Pre-order support for out-of-stock products') . '</li>';
+      $output .= '<li>' . t('Batch management with delivery dates and capacity limits') . '</li>';
+      $output .= '<li>' . t('Automatic order assignment to next available batch') . '</li>';
+      $output .= '<li>' . t('Visual timeline with blue-themed progress indicators') . '</li>';
+      $output .= '<li>' . t('Admin interface for batch management') . '</li>';
+      $output .= '</ul>';
+      $output .= '<p>' . t('Visit <a href=":admin_url">Pre-order Batches</a> to manage batches.', [':admin_url' => '/admin/commerce/preorder-batches']) . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function commerce_preorder_batch_theme($existing, $type, $theme, $path) {
+  return [
+    'preorder_batch_info_simple' => [
+      'variables' => [
+        'batch' => NULL,
+        'product_variation' => NULL,
+        'batch_history' => [],
+      ],
+      'template' => 'preorder-batch-info-simple',
+    ],
+  ];
+}
+
+/**
+ * Implements hook_entity_view().
+ */
+
+/**
+ * Implements hook_form_alter().
+ */
+function commerce_preorder_batch_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Modify add to cart forms to show batch information
+  if (strpos($form_id, 'commerce_order_item_add_to_cart_form') !== FALSE) {
+    $form_object = $form_state->getFormObject();
+    if (method_exists($form_object, 'getEntity')) {
+      $order_item = $form_object->getEntity();
+      $product_variation = $order_item->getPurchasedEntity();
+      
+      if ($product_variation) {
+        $batch_service = \Drupal::service('commerce_preorder_batch.manager');
+        $next_batch = $batch_service->getNextAvailableBatch($product_variation);
+        
+        if ($next_batch) {
+          // Get all batches for this product variation
+          $batch_history = commerce_preorder_batch_get_batch_history($product_variation);
+          
+          // Add batch history next to quantity field
+          $form['batch_history_inline'] = [
+            '#theme' => 'preorder_batch_info_simple',
+            '#batch' => $next_batch,
+            '#product_variation' => $product_variation,
+            '#batch_history' => $batch_history,
+            '#weight' => 3, // Right after quantity
+            '#attached' => [
+              'library' => ['commerce_preorder_batch/preorder_batch'],
+            ],
+            '#attributes' => [
+              'class' => ['preorder-batch-inline'],
+            ],
+          ];
+          
+          // Modify submit button to use attractive pre-order styling
+          if (isset($form['actions']['submit'])) {
+            $form['actions']['submit']['#value'] = t('PRE-ORDER');
+            $form['actions']['submit']['#attributes']['class'][] = 'preorder-button';
+            $form['actions']['#weight'] = 10; // After everything else
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Get batch history for a product variation.
+ */
+function commerce_preorder_batch_get_batch_history(ProductVariationInterface $product_variation) {
+  $storage = \Drupal::entityTypeManager()->getStorage('preorder_batch');
+  
+  // Get all batches for this product variation, not just current year
+  $query = $storage->getQuery()
+    ->condition('product_variations', $product_variation->id())
+    ->sort('batch_date', 'ASC')
+    ->accessCheck(FALSE);
+
+  $batch_ids = $query->execute();
+  
+  if (!empty($batch_ids)) {
+    return $storage->loadMultiple($batch_ids);
+  }
+  
+  return [];
+} 

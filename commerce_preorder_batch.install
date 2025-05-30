@@ -1,0 +1,135 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the commerce_preorder_batch module.
+ */
+
+use Drupal\Core\Field\BaseFieldDefinition;
+
+/**
+ * Implements hook_install().
+ */
+function commerce_preorder_batch_install() {
+  // Install the preorder_batch entity type
+  $entity_type = \Drupal::entityTypeManager()->getDefinition('preorder_batch');
+  \Drupal::entityDefinitionUpdateManager()->installEntityType($entity_type);
+
+  // Set default configuration
+  $config = \Drupal::configFactory()->getEditable('commerce_preorder_batch.settings');
+  $config->set('enable_preorders', TRUE);
+  $config->set('auto_assign_batches', TRUE);
+  $config->set('preorder_button_text', 'Pre-order');
+  $config->set('payment_timing', 'batch_date');
+  $config->set('days_before_shipping', 3);
+  $config->set('notify_customers', TRUE);
+  $config->set('show_batch_info', TRUE);
+  $config->set('show_progress_bar', TRUE);
+  $config->save();
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function commerce_preorder_batch_uninstall() {
+  // Uninstall the preorder_batch entity type
+  $entity_type = \Drupal::entityTypeManager()->getDefinition('preorder_batch');
+  \Drupal::entityDefinitionUpdateManager()->uninstallEntityType($entity_type);
+
+  // Delete configuration
+  \Drupal::configFactory()->getEditable('commerce_preorder_batch.settings')->delete();
+}
+
+/**
+ * Implements hook_schema().
+ */
+function commerce_preorder_batch_schema() {
+  $schema['preorder_batch'] = [
+    'description' => 'The base table for preorder batch entities.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'not null' => TRUE,
+        'description' => 'Primary Key: Unique preorder batch entity ID.',
+      ],
+      'uuid' => [
+        'type' => 'varchar_ascii',
+        'length' => 128,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'Unique Key: Universally unique identifier for this entity.',
+      ],
+      'user_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The {users}.uid of the user who created the batch.',
+      ],
+      'name' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'The name of the batch.',
+      ],
+      'batch_date' => [
+        'type' => 'varchar',
+        'length' => 20,
+        'not null' => TRUE,
+        'description' => 'The date when the batch will be processed.',
+      ],
+      'capacity' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The maximum number of orders this batch can handle.',
+      ],
+      'order_count' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The current number of orders in this batch.',
+      ],
+      'status' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => 'pending',
+        'description' => 'The status of the batch.',
+      ],
+      'langcode' => [
+        'type' => 'varchar_ascii',
+        'length' => 12,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'The language code for this batch.',
+      ],
+      'created' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The time that the entity was created.',
+      ],
+      'changed' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The time that the entity was last edited.',
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'uuid' => ['uuid'],
+    ],
+    'indexes' => [
+      'batch_date' => ['batch_date'],
+      'status' => ['status'],
+      'user_id' => ['user_id'],
+    ],
+  ];
+
+  return $schema;
+} 

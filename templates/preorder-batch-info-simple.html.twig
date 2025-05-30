@@ -1,0 +1,129 @@
+{#
+/**
+ * @file
+ * Compact template for displaying preorder batch information alongside pre-order button.
+ */
+#}
+
+{% if batch %}
+  <div class="preorder-batch-info">
+    <div class="preorder-batch-info__shipping-date">
+      <strong>{{ 'Pre-order:'|t }}</strong>
+      <span class="preorder-batch-info__date">
+        Ships July 24, 2025
+      </span>
+    </div>
+    
+    <div class="preorder-batch-info__progress">
+      <div class="preorder-batch-info__progress-text">
+        <span>Batch 10</span>
+        <span class="preorder-batch-info__availability">
+          100 spots remaining
+        </span>
+      </div>
+      
+      <div class="preorder-batch-info__progress-bar">
+        <div class="preorder-batch-info__progress-fill" style="width: 0%"></div>
+      </div>
+      
+      <div class="preorder-batch-info__progress-numbers">
+        <small>0 / 100 orders</small>
+      </div>
+    </div>
+    
+    {# Compact Batch Timeline #}
+    <div class="preorder-batch-timeline">
+      <div class="preorder-batch-timeline__header">
+        <div class="preorder-batch-timeline__current-batch">
+          <span class="batch-indicator"></span>
+          Batch 10 Ships July
+        </div>
+        <button class="batch-history-toggle" onclick="toggleBatchHistory()">
+          Hide ▲
+        </button>
+      </div>
+      
+      <ul class="preorder-batch-timeline__list" id="batch-history-list">
+        <li class="preorder-batch-timeline__item shipped">
+          <div class="preorder-batch-timeline__item-content">
+            <span class="preorder-batch-timeline__batch-name">Batch 1</span>
+            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
+          </div>
+        </li>
+        <li class="preorder-batch-timeline__item shipped">
+          <div class="preorder-batch-timeline__item-content">
+            <span class="preorder-batch-timeline__batch-name">Batch 2</span>
+            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
+          </div>
+        </li>
+        <li class="preorder-batch-timeline__item shipped">
+          <div class="preorder-batch-timeline__item-content">
+            <span class="preorder-batch-timeline__batch-name">Batch 3</span>
+            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
+          </div>
+        </li>
+        <li class="preorder-batch-timeline__item shipped">
+          <div class="preorder-batch-timeline__item-content">
+            <span class="preorder-batch-timeline__batch-name">Batch 4</span>
+            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
+          </div>
+        </li>
+        <li class="preorder-batch-timeline__item shipped">
+          <div class="preorder-batch-timeline__item-content">
+            <span class="preorder-batch-timeline__batch-name">Batch 5</span>
+            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
+          </div>
+        </li>
+        <li class="preorder-batch-timeline__item shipped">
+          <div class="preorder-batch-timeline__item-content">
+            <span class="preorder-batch-timeline__batch-name">Batch 6</span>
+            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
+          </div>
+        </li>
+        <li class="preorder-batch-timeline__item shipped">
+          <div class="preorder-batch-timeline__item-content">
+            <span class="preorder-batch-timeline__batch-name">Batch 7</span>
+            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
+          </div>
+        </li>
+        <li class="preorder-batch-timeline__item sold-out">
+          <div class="preorder-batch-timeline__item-content">
+            <span class="preorder-batch-timeline__batch-name">Batch 8</span>
+            <span class="preorder-batch-timeline__batch-status sold-out">June - Sold Out</span>
+          </div>
+        </li>
+        <li class="preorder-batch-timeline__item sold-out">
+          <div class="preorder-batch-timeline__item-content">
+            <span class="preorder-batch-timeline__batch-name">Batch 9</span>
+            <span class="preorder-batch-timeline__batch-status sold-out">July - Sold Out</span>
+          </div>
+        </li>
+        <li class="preorder-batch-timeline__item current">
+          <div class="preorder-batch-timeline__item-content">
+            <span class="preorder-batch-timeline__batch-name">Batch 10</span>
+            <span class="preorder-batch-timeline__batch-status current">Ships July</span>
+          </div>
+        </li>
+      </ul>
+    </div>
+    
+    <div class="preorder-batch-info__notice">
+      <p>{{ 'Payment processed when batch ships'|t }}</p>
+    </div>
+  </div>
+
+  <script>
+    function toggleBatchHistory() {
+      const historyList = document.getElementById('batch-history-list');
+      const toggleButton = document.querySelector('.batch-history-toggle');
+      
+      if (historyList.style.display === 'none') {
+        historyList.style.display = 'block';
+        toggleButton.innerHTML = 'Hide ▲';
+      } else {
+        historyList.style.display = 'none';
+        toggleButton.innerHTML = 'Show ▼';
+      }
+    }
+  </script>
+{% endif %} 

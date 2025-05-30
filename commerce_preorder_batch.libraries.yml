@@ -1,0 +1,16 @@
+preorder_batch:
+  version: 1.x
+  css:
+    theme:
+      css/preorder-batch.css: {}
+  dependencies:
+    - core/drupal
+
+admin:
+  version: 1.x
+  css:
+    theme:
+      css/preorder-batch.css: {}
+  dependencies:
+    - core/drupal
+    - core/drupal.vertical-tabs 

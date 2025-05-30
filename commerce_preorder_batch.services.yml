@@ -1,0 +1,4 @@
+services:
+  commerce_preorder_batch.manager:
+    class: Drupal\commerce_preorder_batch\PreorderBatchManager
+    arguments: ['@entity_type.manager', '@datetime.time', '@logger.factory'] 

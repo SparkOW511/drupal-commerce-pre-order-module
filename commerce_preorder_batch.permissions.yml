@@ -1,0 +1,19 @@
+administer commerce_preorder_batch:
+  title: 'Administer Pre-order Batch settings'
+  description: 'Configure Pre-order Batch module settings'
+
+administer preorder_batch entities:
+  title: 'Administer Pre-order Batch entities'
+  description: 'View the pre-order batch administration pages.'
+
+add preorder_batch entities:
+  title: 'Create new Pre-order Batch entities'
+
+edit preorder_batch entities:
+  title: 'Edit Pre-order Batch entities'
+
+delete preorder_batch entities:
+  title: 'Delete Pre-order Batch entities'
+
+view preorder_batch entities:
+  title: 'View Pre-order Batch entities' 

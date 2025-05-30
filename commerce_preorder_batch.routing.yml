@@ -1,0 +1,47 @@
+commerce_preorder_batch.settings:
+  path: '/admin/commerce/config/preorder-batch'
+  defaults:
+    _form: '\Drupal\commerce_preorder_batch\Form\PreorderBatchSettingsForm'
+    _title: 'Pre-order Batch Settings'
+  requirements:
+    _permission: 'administer commerce_preorder_batch'
+
+entity.preorder_batch.collection:
+  path: '/admin/commerce/preorder-batches'
+  defaults:
+    _entity_list: 'preorder_batch'
+    _title: 'Pre-order Batches'
+  requirements:
+    _permission: 'administer preorder_batch entities'
+
+entity.preorder_batch.add_form:
+  path: '/admin/commerce/preorder-batch/add'
+  defaults:
+    _entity_form: 'preorder_batch.add'
+    _title: 'Add Pre-order Batch'
+  requirements:
+    _permission: 'add preorder_batch entities'
+
+entity.preorder_batch.edit_form:
+  path: '/admin/commerce/preorder-batch/{preorder_batch}/edit'
+  defaults:
+    _entity_form: 'preorder_batch.edit'
+    _title: 'Edit Pre-order Batch'
+  requirements:
+    _permission: 'edit preorder_batch entities'
+
+entity.preorder_batch.delete_form:
+  path: '/admin/commerce/preorder-batch/{preorder_batch}/delete'
+  defaults:
+    _entity_form: 'preorder_batch.delete'
+    _title: 'Delete Pre-order Batch'
+  requirements:
+    _permission: 'delete preorder_batch entities'
+
+entity.preorder_batch.canonical:
+  path: '/admin/commerce/preorder-batch/{preorder_batch}'
+  defaults:
+    _entity_view: 'preorder_batch.full'
+    _title: 'Pre-order Batch'
+  requirements:
+    _permission: 'view preorder_batch entities' 

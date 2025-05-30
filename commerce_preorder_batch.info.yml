@@ -1,0 +1,17 @@
+name: Commerce Pre-order Batch
+type: module
+description: 'Enables pre-orders with visual batch management and timeline for out-of-stock Commerce products.'
+package: Commerce
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:system
+  - drupal:user
+  - drupal:field
+  - drupal:datetime
+  - commerce:commerce
+  - commerce:commerce_product
+  - commerce:commerce_order
+  - commerce:commerce_cart
+  - commerce:commerce_checkout
+  - commerce:commerce_payment
+configure: commerce_preorder_batch.settings 
