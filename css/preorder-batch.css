@@ -1006,8 +1006,8 @@
 }
 
 .preorder-batch-inline .preorder-batch-timeline__batch-status.current {
-  color: #1e40af;
-  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  color: #8a4a00;
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
   font-weight: 600;
 }
 
@@ -1417,4 +1417,43 @@
   .preorder-batch-inline .preorder-batch-timeline__list {
     max-height: 120px;
   }
+}
+
+/* Cart full button styling */
+.cart-full-button {
+  background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%) !important;
+  color: #ffffff !important;
+  border: 2px solid #6c757d !important;
+  cursor: not-allowed !important;
+  opacity: 0.8 !important;
+}
+
+.cart-full-button:hover {
+  background: linear-gradient(135deg, #5a6268 0%, #495057 100%) !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Enhanced quantity field descriptions for cart context */
+.form-item-quantity .description {
+  font-size: 0.85rem;
+  color: #495057;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+.form-item-quantity .description strong {
+  color: #dc3545;
+}
+
+/* Preorder message in cart forms */
+.preorder-batch-message {
+  background: #fff3cd;
+  border: 1px solid #0ea5e9;
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 12px;
+  color: #1e40af;
+  font-weight: 500;
+  font-size: 0.9rem;
 } 

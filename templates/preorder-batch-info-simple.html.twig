@@ -6,105 +6,91 @@
 #}
 
 {% if batch %}
+  {% set batch_progress = batch.getBatchProgress() %}
+  {% set batch_date = batch.getBatchDate() %}
+  {% set batch_name = batch.getName() %}
+  
   <div class="preorder-batch-info">
     <div class="preorder-batch-info__shipping-date">
       <strong>{{ 'Pre-order:'|t }}</strong>
       <span class="preorder-batch-info__date">
-        Ships July 24, 2025
+        {% if batch_date %}
+          Ships {{ batch_date|date('F j, Y') }}
+        {% else %}
+          Ships TBD
+        {% endif %}
       </span>
     </div>
     
     <div class="preorder-batch-info__progress">
       <div class="preorder-batch-info__progress-text">
-        <span>Batch 10</span>
+        <span>{{ batch_name ?: 'Batch ' ~ batch.id() }}</span>
         <span class="preorder-batch-info__availability">
-          100 spots remaining
+          {% if batch_progress.is_full %}
+            Sold Out
+          {% else %}
+            {{ batch_progress.remaining }} spots remaining
+          {% endif %}
         </span>
       </div>
       
       <div class="preorder-batch-info__progress-bar">
-        <div class="preorder-batch-info__progress-fill" style="width: 0%"></div>
+        <div class="preorder-batch-info__progress-fill" style="width: {{ batch_progress.percentage }}%"></div>
       </div>
       
       <div class="preorder-batch-info__progress-numbers">
-        <small>0 / 100 orders</small>
+        <small>{{ batch_progress.current }} / {{ batch_progress.capacity }} items</small>
       </div>
     </div>
     
-    {# Compact Batch Timeline #}
+    {% if total_available > 0 %}
+      <div class="preorder-batch-info__total-available">
+        <div class="preorder-batch-info__total-text">
+          <strong>{{ 'Total Available:'|t }}</strong>
+          <span class="preorder-batch-info__total-count">{{ total_available }} items across all batches</span>
+        </div>
+      </div>
+    {% endif %}
+    
+    {# Dynamic Batch Timeline #}
     <div class="preorder-batch-timeline">
       <div class="preorder-batch-timeline__header">
         <div class="preorder-batch-timeline__current-batch">
           <span class="batch-indicator"></span>
-          Batch 10 Ships July
+          {{ batch_name ?: 'Batch ' ~ batch.id() }} Ships {{ batch_date ? batch_date|date('F') : 'TBD' }}
         </div>
         <button class="batch-history-toggle" onclick="toggleBatchHistory()">
-          Hide ▲
+          {% if batch_history|length > 1 %}Hide ▲{% else %}Show ▼{% endif %}
         </button>
       </div>
       
-      <ul class="preorder-batch-timeline__list" id="batch-history-list">
-        <li class="preorder-batch-timeline__item shipped">
-          <div class="preorder-batch-timeline__item-content">
-            <span class="preorder-batch-timeline__batch-name">Batch 1</span>
-            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
-          </div>
-        </li>
-        <li class="preorder-batch-timeline__item shipped">
-          <div class="preorder-batch-timeline__item-content">
-            <span class="preorder-batch-timeline__batch-name">Batch 2</span>
-            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
-          </div>
-        </li>
-        <li class="preorder-batch-timeline__item shipped">
-          <div class="preorder-batch-timeline__item-content">
-            <span class="preorder-batch-timeline__batch-name">Batch 3</span>
-            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
-          </div>
-        </li>
-        <li class="preorder-batch-timeline__item shipped">
-          <div class="preorder-batch-timeline__item-content">
-            <span class="preorder-batch-timeline__batch-name">Batch 4</span>
-            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
-          </div>
-        </li>
-        <li class="preorder-batch-timeline__item shipped">
-          <div class="preorder-batch-timeline__item-content">
-            <span class="preorder-batch-timeline__batch-name">Batch 5</span>
-            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
-          </div>
-        </li>
-        <li class="preorder-batch-timeline__item shipped">
-          <div class="preorder-batch-timeline__item-content">
-            <span class="preorder-batch-timeline__batch-name">Batch 6</span>
-            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
-          </div>
-        </li>
-        <li class="preorder-batch-timeline__item shipped">
-          <div class="preorder-batch-timeline__item-content">
-            <span class="preorder-batch-timeline__batch-name">Batch 7</span>
-            <span class="preorder-batch-timeline__batch-status shipped">Shipped</span>
-          </div>
-        </li>
-        <li class="preorder-batch-timeline__item sold-out">
-          <div class="preorder-batch-timeline__item-content">
-            <span class="preorder-batch-timeline__batch-name">Batch 8</span>
-            <span class="preorder-batch-timeline__batch-status sold-out">June - Sold Out</span>
-          </div>
-        </li>
-        <li class="preorder-batch-timeline__item sold-out">
-          <div class="preorder-batch-timeline__item-content">
-            <span class="preorder-batch-timeline__batch-name">Batch 9</span>
-            <span class="preorder-batch-timeline__batch-status sold-out">July - Sold Out</span>
-          </div>
-        </li>
-        <li class="preorder-batch-timeline__item current">
-          <div class="preorder-batch-timeline__item-content">
-            <span class="preorder-batch-timeline__batch-name">Batch 10</span>
-            <span class="preorder-batch-timeline__batch-status current">Ships July</span>
-          </div>
-        </li>
-      </ul>
+      {% if batch_history|length > 0 %}
+        <ul class="preorder-batch-timeline__list" id="batch-history-list" {% if batch_history|length <= 1 %}style="display: none;"{% endif %}>
+          {% for history_batch in batch_history %}
+            {% set history_progress = history_batch.getBatchProgress() %}
+            {% set is_current = history_batch.id() == batch.id() %}
+            {% set is_full = history_progress.is_full %}
+            {% set batch_status = history_batch.get('status').value %}
+            
+            <li class="preorder-batch-timeline__item {{ is_current ? 'current' : (batch_status == 'shipped' ? 'shipped' : (is_full ? 'sold-out' : 'available')) }}">
+              <div class="preorder-batch-timeline__item-content">
+                <span class="preorder-batch-timeline__batch-name">{{ history_batch.getName() ?: 'Batch ' ~ history_batch.id() }}</span>
+                <span class="preorder-batch-timeline__batch-status {{ is_current ? 'current' : (batch_status == 'shipped' ? 'shipped' : (is_full ? 'sold-out' : 'available')) }}">
+                  {% if batch_status == 'shipped' %}
+                    Shipped
+                  {% elseif is_current %}
+                    Ships {{ history_batch.getBatchDate() ? history_batch.getBatchDate()|date('F') : 'TBD' }}
+                  {% elseif is_full %}
+                    {{ history_batch.getBatchDate() ? history_batch.getBatchDate()|date('F') : 'TBD' }} - Sold Out
+                  {% else %}
+                    Available
+                  {% endif %}
+                </span>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
     </div>
     
     <div class="preorder-batch-info__notice">

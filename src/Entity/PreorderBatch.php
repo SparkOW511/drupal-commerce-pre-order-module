@@ -178,14 +178,14 @@ class PreorderBatch extends ContentEntityBase implements ContentEntityInterface 
   }
 
   /**
-   * Gets the current order count.
+   * Gets the current quantity count.
    */
   public function getOrderCount() {
     return (int) $this->get('order_count')->value;
   }
 
   /**
-   * Sets the order count.
+   * Sets the quantity count.
    */
   public function setOrderCount($count) {
     $this->set('order_count', $count);
@@ -205,6 +205,26 @@ class PreorderBatch extends ContentEntityBase implements ContentEntityInterface 
   public function isReadyForProcessing() {
     $now = new \DateTime();
     return $this->getBatchDate() <= $now && $this->get('status')->value === 'pending';
+  }
+
+  /**
+   * Gets batch progress information.
+   *
+   * @return array
+   *   Array with progress information.
+   */
+  public function getBatchProgress() {
+    $capacity = $this->getCapacity();
+    $current = $this->getOrderCount();
+    $percentage = $capacity > 0 ? round(($current / $capacity) * 100, 1) : 0;
+
+    return [
+      'current' => $current,
+      'capacity' => $capacity,
+      'percentage' => $percentage,
+      'remaining' => $capacity - $current,
+      'is_full' => $this->isFull(),
+    ];
   }
 
   /**
@@ -303,7 +323,7 @@ class PreorderBatch extends ContentEntityBase implements ContentEntityInterface 
 
     $fields['capacity'] = BaseFieldDefinition::create('integer')
       ->setLabel(t('Capacity'))
-      ->setDescription(t('Maximum number of orders this batch can handle.'))
+      ->setDescription(t('Maximum number of items this batch can handle.'))
       ->setRequired(TRUE)
       ->setDefaultValue(100)
       ->setDisplayOptions('view', [
@@ -319,8 +339,8 @@ class PreorderBatch extends ContentEntityBase implements ContentEntityInterface 
       ->setDisplayConfigurable('view', TRUE);
 
     $fields['order_count'] = BaseFieldDefinition::create('integer')
-      ->setLabel(t('Order Count'))
-      ->setDescription(t('Current number of orders assigned to this batch.'))
+      ->setLabel(t('Current Quantity'))
+      ->setDescription(t('Current number of items assigned to this batch.'))
       ->setDefaultValue(0)
       ->setDisplayOptions('view', [
         'label' => 'above',

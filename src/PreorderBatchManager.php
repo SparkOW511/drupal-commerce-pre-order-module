@@ -68,18 +68,19 @@ class PreorderBatchManager {
       ->condition('product_variations', $product_variation->id())
       ->condition('batch_date', date('Y-m-d'), '>=')
       ->sort('batch_date', 'ASC')
-      ->range(0, 1)
       ->accessCheck(FALSE);
 
     $batch_ids = $query->execute();
     
     if (!empty($batch_ids)) {
-      $batch_id = reset($batch_ids);
-      $batch = $storage->load($batch_id);
-      
-      // Check if batch is not full
-      if (!$batch->isFull()) {
-        return $batch;
+      // Check each batch in order until we find one that's not full
+      foreach ($batch_ids as $batch_id) {
+        $batch = $storage->load($batch_id);
+        
+        // Check if batch is not full
+        if (!$batch->isFull()) {
+          return $batch;
+        }
       }
     }
 
@@ -102,24 +103,128 @@ class PreorderBatchManager {
       return FALSE;
     }
 
-    // Add batch reference to order
-    if ($order->hasField('preorder_batch')) {
-      $order->set('preorder_batch', $batch->id());
-      $order->save();
+    // Calculate total quantity for this order
+    $total_quantity = 0;
+    $product_variation = NULL;
+    foreach ($order->getItems() as $order_item) {
+      $variation = $order_item->getPurchasedEntity();
+      if ($variation) {
+        // Check if this product variation is in the batch
+        $batch_variations = $batch->getProductVariations();
+        foreach ($batch_variations as $batch_variation) {
+          if ($batch_variation->id() == $variation->id()) {
+            $total_quantity += (int) $order_item->getQuantity();
+            $product_variation = $variation;
+            break;
+          }
+        }
+      }
     }
 
-    // Update batch order count
-    $current_count = $batch->getOrderCount();
-    $batch->setOrderCount($current_count + 1);
-    $batch->save();
+    if ($total_quantity == 0 || !$product_variation) {
+      return FALSE;
+    }
 
-    $this->loggerFactory->get('commerce_preorder_batch')
-      ->info('Order @order_id assigned to batch @batch_id', [
-        '@order_id' => $order->id(),
-        '@batch_id' => $batch->id(),
-      ]);
+    // Use the new method to assign quantities across multiple batches
+    return $this->assignQuantityToBatches($product_variation, $total_quantity, $order);
+  }
 
-    return TRUE;
+  /**
+   * Assigns a quantity to batches, splitting across multiple batches if needed.
+   *
+   * @param \Drupal\commerce_product\Entity\ProductVariationInterface $product_variation
+   *   The product variation.
+   * @param int $quantity
+   *   The quantity to assign.
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   *   The order to assign.
+   *
+   * @return bool
+   *   TRUE if all quantity was assigned, FALSE otherwise.
+   */
+  public function assignQuantityToBatches(ProductVariationInterface $product_variation, $quantity, OrderInterface $order) {
+    // Safety check: ensure we don't assign more than total available capacity
+    $total_available = $this->getTotalAvailableCapacity($product_variation);
+    if ($quantity > $total_available) {
+      $this->loggerFactory->get('commerce_preorder_batch')
+        ->warning('Attempted to assign @quantity items but only @available available for product variation @variation_id', [
+          '@quantity' => $quantity,
+          '@available' => $total_available,
+          '@variation_id' => $product_variation->id(),
+        ]);
+      return FALSE;
+    }
+    
+    $remaining_quantity = $quantity;
+    $assigned_batches = [];
+    
+    // Get all available batches for this product variation
+    $storage = $this->entityTypeManager->getStorage('preorder_batch');
+    $query = $storage->getQuery()
+      ->condition('status', 'pending')
+      ->condition('product_variations', $product_variation->id())
+      ->condition('batch_date', date('Y-m-d'), '>=')
+      ->sort('batch_date', 'ASC')
+      ->accessCheck(FALSE);
+
+    $batch_ids = $query->execute();
+    
+    if (empty($batch_ids)) {
+      return FALSE;
+    }
+
+    // Try to assign quantity to batches in order
+    foreach ($batch_ids as $batch_id) {
+      if ($remaining_quantity <= 0) {
+        break;
+      }
+
+      $batch = $storage->load($batch_id);
+      if (!$batch || $batch->isFull()) {
+        continue;
+      }
+
+      $current_count = $batch->getOrderCount();
+      $capacity = $batch->getCapacity();
+      $available_space = $capacity - $current_count;
+
+      if ($available_space > 0) {
+        // Assign as much as possible to this batch
+        $quantity_to_assign = min($remaining_quantity, $available_space);
+        
+        // Update batch order count
+        $batch->setOrderCount($current_count + $quantity_to_assign);
+        $batch->save();
+        
+        // Track this assignment
+        $assigned_batches[] = [
+          'batch_id' => $batch->id(),
+          'quantity' => $quantity_to_assign,
+        ];
+        
+        $remaining_quantity -= $quantity_to_assign;
+        
+        $this->loggerFactory->get('commerce_preorder_batch')
+          ->info('Assigned @quantity items from order @order_id to batch @batch_id', [
+            '@quantity' => $quantity_to_assign,
+            '@order_id' => $order->id(),
+            '@batch_id' => $batch->id(),
+          ]);
+      }
+    }
+
+    // Add batch references to order if any assignments were made
+    if (!empty($assigned_batches) && $order->hasField('preorder_batch')) {
+      $current_batches = $order->get('preorder_batch')->getValue();
+      foreach ($assigned_batches as $assignment) {
+        $current_batches[] = ['target_id' => $assignment['batch_id']];
+      }
+      $order->set('preorder_batch', $current_batches);
+      // Don't save here to avoid recursion - let the calling code handle saving
+    }
+
+    // Return TRUE if all quantity was assigned
+    return $remaining_quantity == 0;
   }
 
   /**
@@ -260,6 +365,44 @@ class PreorderBatchManager {
       'remaining' => $capacity - $current,
       'is_full' => $batch->isFull(),
     ];
+  }
+
+  /**
+   * Gets total available capacity across all batches for a product variation.
+   *
+   * @param \Drupal\commerce_product\Entity\ProductVariationInterface $product_variation
+   *   The product variation.
+   *
+   * @return int
+   *   Total available capacity across all batches.
+   */
+  public function getTotalAvailableCapacity(ProductVariationInterface $product_variation) {
+    $storage = $this->entityTypeManager->getStorage('preorder_batch');
+    
+    $query = $storage->getQuery()
+      ->condition('status', 'pending')
+      ->condition('product_variations', $product_variation->id())
+      ->condition('batch_date', date('Y-m-d'), '>=')
+      ->accessCheck(FALSE);
+
+    $batch_ids = $query->execute();
+    
+    if (empty($batch_ids)) {
+      return 0;
+    }
+
+    $total_available = 0;
+    foreach ($batch_ids as $batch_id) {
+      $batch = $storage->load($batch_id);
+      if ($batch && !$batch->isFull()) {
+        $current_count = $batch->getOrderCount();
+        $capacity = $batch->getCapacity();
+        $available_space = $capacity - $current_count;
+        $total_available += $available_space;
+      }
+    }
+
+    return $total_available;
   }
 
 } 

@@ -6,6 +6,13 @@ preorder_batch:
   dependencies:
     - core/drupal
 
+quantity_validation:
+  version: 1.x
+  js:
+    js/quantity-validation.js: {}
+  dependencies:
+    - core/drupal
+
 admin:
   version: 1.x
   css:

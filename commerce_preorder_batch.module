@@ -45,6 +45,7 @@ function commerce_preorder_batch_theme($existing, $type, $theme, $path) {
         'batch' => NULL,
         'product_variation' => NULL,
         'batch_history' => [],
+        'total_available' => 0,
       ],
       'template' => 'preorder-batch-info-simple',
     ],
@@ -59,8 +60,15 @@ function commerce_preorder_batch_theme($existing, $type, $theme, $path) {
  * Implements hook_form_alter().
  */
 function commerce_preorder_batch_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Try multiple patterns for add to cart forms
+  $is_add_to_cart_form = (
+    strpos($form_id, 'commerce_order_item_add_to_cart_form') !== FALSE ||
+    strpos($form_id, 'add_to_cart_form') !== FALSE ||
+    strpos($form_id, 'commerce_order_item') !== FALSE && strpos($form_id, 'add_to_cart') !== FALSE
+  );
+  
   // Modify add to cart forms to show batch information
-  if (strpos($form_id, 'commerce_order_item_add_to_cart_form') !== FALSE) {
+  if ($is_add_to_cart_form) {
     $form_object = $form_state->getFormObject();
     if (method_exists($form_object, 'getEntity')) {
       $order_item = $form_object->getEntity();
@@ -68,34 +76,236 @@ function commerce_preorder_batch_form_alter(&$form, FormStateInterface $form_sta
       
       if ($product_variation) {
         $batch_service = \Drupal::service('commerce_preorder_batch.manager');
-        $next_batch = $batch_service->getNextAvailableBatch($product_variation);
         
-        if ($next_batch) {
-          // Get all batches for this product variation
-          $batch_history = commerce_preorder_batch_get_batch_history($product_variation);
+        // Get all batches for this product variation first
+        $batch_history = commerce_preorder_batch_get_batch_history($product_variation);
+        
+        // Only show preorder interface if there are any batches for this product
+        if (!empty($batch_history)) {
+          $next_batch = $batch_service->getNextAvailableBatch($product_variation);
+          $total_available = $batch_service->getTotalAvailableCapacity($product_variation);
           
-          // Add batch history next to quantity field
-          $form['batch_history_inline'] = [
-            '#theme' => 'preorder_batch_info_simple',
-            '#batch' => $next_batch,
-            '#product_variation' => $product_variation,
-            '#batch_history' => $batch_history,
-            '#weight' => 3, // Right after quantity
-            '#attached' => [
-              'library' => ['commerce_preorder_batch/preorder_batch'],
-            ],
-            '#attributes' => [
-              'class' => ['preorder-batch-inline'],
-            ],
-          ];
+          // Use the next available batch, or the next upcoming batch if none available
+          $display_batch = $next_batch;
+          if (!$display_batch) {
+            $display_batch = commerce_preorder_batch_get_next_upcoming_batch($product_variation);
+          }
+          if (!$display_batch && !empty($batch_history)) {
+            // If no upcoming batch, show the latest batch for reference
+            $display_batch = end($batch_history);
+          }
           
-          // Modify submit button to use attractive pre-order styling
-          if (isset($form['actions']['submit'])) {
-            $form['actions']['submit']['#value'] = t('PRE-ORDER');
-            $form['actions']['submit']['#attributes']['class'][] = 'preorder-button';
-            $form['actions']['#weight'] = 10; // After everything else
+          if ($display_batch) {
+            // Add batch history next to quantity field
+            $form['batch_history_inline'] = [
+              '#theme' => 'preorder_batch_info_simple',
+              '#batch' => $display_batch,
+              '#product_variation' => $product_variation,
+              '#batch_history' => $batch_history,
+              '#total_available' => $total_available,
+              '#weight' => 3, // Right after quantity
+              '#attached' => [
+                'library' => ['commerce_preorder_batch/preorder_batch'],
+              ],
+              '#attributes' => [
+                'class' => ['preorder-batch-inline'],
+              ],
+            ];
+            
+            // Update quantity field with maximum available and add client-side validation
+            if (isset($form['quantity']) && $total_available > 0) {
+              // Get current cart and check existing quantities for this product variation
+              $existing_quantity_in_cart = commerce_preorder_batch_get_cart_quantity($product_variation->id());
+              
+              // Calculate how many more items can be added
+              $max_additional = max(0, $total_available - $existing_quantity_in_cart);
+              
+              // Set the maximum to the number that can still be added
+              $form['quantity']['#max'] = $max_additional;
+              $form['quantity']['#attributes']['max'] = $max_additional;
+              $form['quantity']['#attributes']['data-max-available'] = $max_additional;
+              
+              // Update description to show cart context
+              if ($existing_quantity_in_cart > 0) {
+                $form['quantity']['#description'] = t('You have @existing items in your cart. You can add @max more items (total available: @total)', [
+                  '@existing' => $existing_quantity_in_cart,
+                  '@max' => $max_additional,
+                  '@total' => $total_available
+                ]);
+              } else {
+                $form['quantity']['#description'] = t('Maximum available: @max items across all batches', ['@max' => $total_available]);
+              }
+              
+              // Also set attributes on the nested input field if it exists
+              if (isset($form['quantity'][0]['value'])) {
+                $form['quantity'][0]['value']['#max'] = $max_additional;
+                $form['quantity'][0]['value']['#attributes']['max'] = $max_additional;
+                $form['quantity'][0]['value']['#attributes']['data-max-available'] = $max_additional;
+              }
+              
+              // Add client-side validation library
+              $form['#attached']['library'][] = 'commerce_preorder_batch/quantity_validation';
+              $form['#attached']['drupalSettings']['commerce_preorder_batch']['max_quantity'] = $max_additional;
+              
+              // Disable the add to cart button if no more items can be added
+              if ($max_additional <= 0 && isset($form['actions']['submit'])) {
+                $form['actions']['submit']['#disabled'] = TRUE;
+                $form['actions']['submit']['#value'] = t('CART FULL - @existing/@total items', [
+                  '@existing' => $existing_quantity_in_cart,
+                  '@total' => $total_available
+                ]);
+                $form['actions']['submit']['#attributes']['class'][] = 'cart-full-button';
+              }
+            } else {
+              // Try to find quantity field recursively
+              commerce_preorder_batch_apply_quantity_validation($form, $total_available, $product_variation->id());
+            }
+            
+            // Add custom validation
+            $form['#validate'][] = 'commerce_preorder_batch_add_to_cart_validate';
+            
+            // Add submit handler to catch any cases that slip through
+            $form['#submit'][] = 'commerce_preorder_batch_add_to_cart_submit';
+            
+            // Store values for validation
+            $form['#preorder_batch_data'] = [
+              'product_variation_id' => $product_variation->id(),
+              'total_available' => $total_available,
+            ];
+            
+            // Modify submit button based on availability
+            if (isset($form['actions']['submit'])) {
+              if ($next_batch && $total_available > 0) {
+                // Available batch - show PRE-ORDER button
+                $form['actions']['submit']['#value'] = t('PRE-ORDER');
+                $form['actions']['submit']['#attributes']['class'][] = 'preorder-button';
+              } else {
+                // No available batch - show NOTIFY ME or similar
+                $form['actions']['submit']['#value'] = t('NOTIFY WHEN AVAILABLE');
+                $form['actions']['submit']['#attributes']['class'][] = 'notify-button';
+                $form['actions']['submit']['#disabled'] = TRUE;
+              }
+              $form['actions']['#weight'] = 10; // After everything else
+            }
           }
         }
+      }
+    }
+  }
+}
+
+/**
+ * Helper function to get existing quantity in cart for a product variation.
+ *
+ * @param int $product_variation_id
+ *   The product variation ID.
+ *
+ * @return int
+ *   The total quantity of this product variation currently in the cart.
+ */
+function commerce_preorder_batch_get_cart_quantity($product_variation_id) {
+  $cart_provider = \Drupal::service('commerce_cart.cart_provider');
+  $store = \Drupal::service('commerce_store.current_store')->getStore();
+  $cart = $cart_provider->getCart('default', $store);
+  
+  $existing_quantity_in_cart = 0;
+  if ($cart) {
+    foreach ($cart->getItems() as $cart_item) {
+      $cart_variation = $cart_item->getPurchasedEntity();
+      if ($cart_variation && $cart_variation->id() == $product_variation_id) {
+        $existing_quantity_in_cart += (int) $cart_item->getQuantity();
+      }
+    }
+  }
+  
+  return $existing_quantity_in_cart;
+}
+
+/**
+ * Custom validation for add to cart forms with preorder batches.
+ */
+function commerce_preorder_batch_add_to_cart_validate($form, FormStateInterface $form_state) {
+  // Get the preorder batch data we stored in form_alter
+  $preorder_data = $form['#preorder_batch_data'] ?? NULL;
+  
+  if (!$preorder_data) {
+    return;
+  }
+  
+  $quantity = (int) $form_state->getValue('quantity');
+  $total_available = $preorder_data['total_available'];
+  $product_variation_id = $preorder_data['product_variation_id'];
+  
+  // Get current cart and check existing quantities for this product variation
+  $existing_quantity_in_cart = commerce_preorder_batch_get_cart_quantity($product_variation_id);
+  
+  // Calculate total quantity (existing + new)
+  $total_requested_quantity = $existing_quantity_in_cart + $quantity;
+  
+  if ($total_requested_quantity > $total_available) {
+    if ($existing_quantity_in_cart > 0) {
+      $form_state->setErrorByName('quantity', t('The total quantity (@total = @existing already in cart + @new requested) exceeds the available capacity (@available) across all batches for this product. You can add at most @max more items.', [
+        '@total' => $total_requested_quantity,
+        '@existing' => $existing_quantity_in_cart,
+        '@new' => $quantity,
+        '@available' => $total_available,
+        '@max' => max(0, $total_available - $existing_quantity_in_cart),
+      ]));
+      
+      \Drupal::messenger()->addError(t('Cannot add @requested items to cart. You already have @existing items in your cart. Only @remaining more items can be added (total available: @available).', [
+        '@requested' => $quantity,
+        '@existing' => $existing_quantity_in_cart,
+        '@remaining' => max(0, $total_available - $existing_quantity_in_cart),
+        '@available' => $total_available,
+      ]));
+    } else {
+      $form_state->setErrorByName('quantity', t('The requested quantity (@requested) exceeds the total available capacity (@available) across all batches for this product.', [
+        '@requested' => $quantity,
+        '@available' => $total_available,
+      ]));
+      
+      \Drupal::messenger()->addError(t('Cannot add @requested items to cart. Only @available items are available across all batches.', [
+        '@requested' => $quantity,
+        '@available' => $total_available,
+      ]));
+    }
+    
+    return;
+  }
+  
+  // Double-check with fresh data to prevent race conditions
+  $batch_service = \Drupal::service('commerce_preorder_batch.manager');
+  $product_variation = \Drupal::entityTypeManager()->getStorage('commerce_product_variation')->load($product_variation_id);
+  
+  if ($product_variation) {
+    $current_available = $batch_service->getTotalAvailableCapacity($product_variation);
+    
+    if ($total_requested_quantity > $current_available) {
+      if ($existing_quantity_in_cart > 0) {
+        $form_state->setErrorByName('quantity', t('The total quantity (@total = @existing already in cart + @new requested) exceeds the currently available capacity (@available). You can add at most @max more items. Please refresh the page and try again.', [
+          '@total' => $total_requested_quantity,
+          '@existing' => $existing_quantity_in_cart,
+          '@new' => $quantity,
+          '@available' => $current_available,
+          '@max' => max(0, $current_available - $existing_quantity_in_cart),
+        ]));
+        
+        \Drupal::messenger()->addError(t('Cannot add @requested items to cart. You already have @existing items in your cart. Only @remaining more items can be added (currently available: @available). Please refresh the page and try again.', [
+          '@requested' => $quantity,
+          '@existing' => $existing_quantity_in_cart,
+          '@remaining' => max(0, $current_available - $existing_quantity_in_cart),
+          '@available' => $current_available,
+        ]));
+      } else {
+        $form_state->setErrorByName('quantity', t('The requested quantity (@requested) exceeds the currently available capacity (@available). Please refresh the page and try again.', [
+          '@requested' => $quantity,
+          '@available' => $current_available,
+        ]));
+        
+        \Drupal::messenger()->addError(t('Cannot add @requested items to cart. Only @available items are currently available. Please refresh the page and try again.', [
+          '@requested' => $quantity,
+          '@available' => $current_available,
+        ]));
       }
     }
   }
@@ -120,4 +330,191 @@ function commerce_preorder_batch_get_batch_history(ProductVariationInterface $pr
   }
   
   return [];
+}
+
+/**
+ * Get the next upcoming batch for a product variation (even if full).
+ */
+function commerce_preorder_batch_get_next_upcoming_batch(ProductVariationInterface $product_variation) {
+  $storage = \Drupal::entityTypeManager()->getStorage('preorder_batch');
+  
+  $query = $storage->getQuery()
+    ->condition('product_variations', $product_variation->id())
+    ->condition('batch_date', date('Y-m-d'), '>=')
+    ->condition('status', ['pending', 'processing'], 'IN')
+    ->sort('batch_date', 'ASC')
+    ->range(0, 1)
+    ->accessCheck(FALSE);
+
+  $batch_ids = $query->execute();
+  
+  if (!empty($batch_ids)) {
+    $batch_id = reset($batch_ids);
+    return $storage->load($batch_id);
+  }
+
+  return NULL;
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for commerce_order.
+ */
+function commerce_preorder_batch_commerce_order_presave(OrderInterface $order) {
+  // Prevent infinite loops by checking if we're already processing this order
+  static $processing_orders = [];
+  $order_id = $order->id() ?: 'new_' . spl_object_hash($order);
+  
+  if (isset($processing_orders[$order_id])) {
+    return;
+  }
+  
+  // Only process orders that are being placed (transitioning to a completed state)
+  if ($order->getState()->getId() === 'completed' && $order->original && $order->original->getState()->getId() !== 'completed') {
+    $processing_orders[$order_id] = TRUE;
+    commerce_preorder_batch_assign_order_to_batch($order);
+    unset($processing_orders[$order_id]);
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_insert() for commerce_order.
+ */
+function commerce_preorder_batch_commerce_order_insert(OrderInterface $order) {
+  // Also handle new orders that are immediately completed
+  if ($order->getState()->getId() === 'completed') {
+    commerce_preorder_batch_assign_order_to_batch($order);
+  }
+}
+
+/**
+ * Helper function to assign an order to appropriate batches.
+ */
+function commerce_preorder_batch_assign_order_to_batch(OrderInterface $order) {
+  $batch_manager = \Drupal::service('commerce_preorder_batch.manager');
+  
+  // Group order items by product variation
+  $variation_quantities = [];
+  foreach ($order->getItems() as $order_item) {
+    $product_variation = $order_item->getPurchasedEntity();
+    if ($product_variation) {
+      $variation_id = $product_variation->id();
+      if (!isset($variation_quantities[$variation_id])) {
+        $variation_quantities[$variation_id] = [
+          'variation' => $product_variation,
+          'quantity' => 0,
+        ];
+      }
+      $variation_quantities[$variation_id]['quantity'] += (int) $order_item->getQuantity();
+    }
+  }
+  
+  // Assign each variation to appropriate batches
+  foreach ($variation_quantities as $variation_data) {
+    $product_variation = $variation_data['variation'];
+    $quantity = $variation_data['quantity'];
+    
+    // Check if this product supports pre-orders
+    if ($batch_manager->isPreorderEnabled($product_variation)) {
+      // Use the new method to assign quantities across multiple batches
+      $batch_manager->assignQuantityToBatches($product_variation, $quantity, $order);
+    }
+  }
+  
+  // Don't save the order here - let the original save operation complete
+}
+
+/**
+ * Recursively apply quantity validation to all form elements.
+ */
+function commerce_preorder_batch_apply_quantity_validation(&$form, $total_available, $product_variation_id) {
+  foreach ($form as $key => &$element) {
+    // Skip form properties that start with #
+    if (strpos($key, '#') === 0) {
+      continue;
+    }
+    
+    if (is_array($element)) {
+      // Check if this element is a quantity field
+      if ($key === 'quantity' || (isset($element['#type']) && $element['#type'] === 'number' && strpos($key, 'quantity') !== FALSE)) {
+        if ($total_available > 0) {
+          // Get current cart and check existing quantities for this product variation
+          $existing_quantity_in_cart = commerce_preorder_batch_get_cart_quantity($product_variation_id);
+          
+          // Calculate how many more items can be added
+          $max_additional = max(0, $total_available - $existing_quantity_in_cart);
+          
+          $element['#max'] = $max_additional;
+          $element['#attributes']['max'] = $max_additional;
+          $element['#attributes']['data-max-available'] = $max_additional;
+          
+          // Update description to show cart context
+          if ($existing_quantity_in_cart > 0) {
+            $element['#description'] = t('You have @existing items in your cart. You can add @max more items (total available: @total)', [
+              '@existing' => $existing_quantity_in_cart,
+              '@max' => $max_additional,
+              '@total' => $total_available
+            ]);
+          } else {
+            $element['#description'] = t('Maximum available: @max items across all batches', ['@max' => $total_available]);
+          }
+          
+          // Also set attributes on the nested input field if it exists
+          if (isset($element[0]['value'])) {
+            $element[0]['value']['#max'] = $max_additional;
+            $element[0]['value']['#attributes']['max'] = $max_additional;
+            $element[0]['value']['#attributes']['data-max-available'] = $max_additional;
+          }
+          
+          // Add client-side validation library
+          $form['#attached']['library'][] = 'commerce_preorder_batch/quantity_validation';
+          $form['#attached']['drupalSettings']['commerce_preorder_batch']['max_quantity'] = $max_additional;
+        }
+      } else {
+        // Recursively search in nested arrays
+        commerce_preorder_batch_apply_quantity_validation($element, $total_available, $product_variation_id);
+      }
+    }
+  }
+}
+
+/**
+ * Submit handler for add to cart forms with preorder batches.
+ */
+function commerce_preorder_batch_add_to_cart_submit($form, FormStateInterface $form_state) {
+  // Get the preorder batch data we stored in form_alter
+  $preorder_data = $form['#preorder_batch_data'] ?? NULL;
+  
+  if (!$preorder_data) {
+    return;
+  }
+  
+  $quantity = (int) $form_state->getValue('quantity');
+  $total_available = $preorder_data['total_available'];
+  $product_variation_id = $preorder_data['product_variation_id'];
+  
+  // Get current cart and check existing quantities for this product variation
+  $existing_quantity_in_cart = commerce_preorder_batch_get_cart_quantity($product_variation_id);
+  
+  // Calculate total quantity (existing + new)
+  $total_requested_quantity = $existing_quantity_in_cart + $quantity;
+  
+  // Final check before allowing submission
+  if ($total_requested_quantity > $total_available) {
+    if ($existing_quantity_in_cart > 0) {
+      \Drupal::messenger()->addError(t('Cannot add @requested items to cart. You already have @existing items in your cart. Only @remaining more items can be added (total available: @available).', [
+        '@requested' => $quantity,
+        '@existing' => $existing_quantity_in_cart,
+        '@remaining' => max(0, $total_available - $existing_quantity_in_cart),
+        '@available' => $total_available,
+      ]));
+    } else {
+      \Drupal::messenger()->addError(t('Cannot add @requested items to cart. Only @available items are available across all batches.', [
+        '@requested' => $quantity,
+        '@available' => $total_available,
+      ]));
+    }
+    
+    $form_state->setRebuild(TRUE);
+    return;
+  }
 } 
