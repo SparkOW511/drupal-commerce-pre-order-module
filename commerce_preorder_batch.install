@@ -132,4 +132,35 @@ function commerce_preorder_batch_schema() {
   ];
 
   return $schema;
+}
+
+/**
+ * Add preorder_batch field to commerce_order entities.
+ */
+function commerce_preorder_batch_update_8001() {
+  $field_storage_definition = BaseFieldDefinition::create('entity_reference')
+    ->setLabel(t('Preorder Batch'))
+    ->setDescription(t('The preorder batch(es) this order belongs to.'))
+    ->setSetting('target_type', 'preorder_batch')
+    ->setCardinality(-1)
+    ->setDisplayOptions('view', [
+      'label' => 'above',
+      'type' => 'entity_reference_label',
+      'weight' => 15,
+    ])
+    ->setDisplayOptions('form', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 15,
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'size' => '60',
+        'autocomplete_type' => 'tags',
+        'placeholder' => '',
+      ],
+    ])
+    ->setDisplayConfigurable('form', TRUE)
+    ->setDisplayConfigurable('view', TRUE);
+
+  \Drupal::entityDefinitionUpdateManager()
+    ->installFieldStorageDefinition('preorder_batch', 'commerce_order', 'commerce_preorder_batch', $field_storage_definition);
 } 

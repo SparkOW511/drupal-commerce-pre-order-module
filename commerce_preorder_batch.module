@@ -10,6 +10,41 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\commerce_product\Entity\ProductVariationInterface;
 use Drupal\commerce_order\Entity\OrderInterface;
 use Drupal\commerce_preorder_batch\Entity\PreorderBatch;
+use Drupal\Core\Field\BaseFieldDefinition;
+
+/**
+ * Implements hook_entity_base_field_info().
+ */
+function commerce_preorder_batch_entity_base_field_info(\Drupal\Core\Entity\EntityTypeInterface $entity_type) {
+  $fields = [];
+
+  if ($entity_type->id() === 'commerce_order') {
+    $fields['preorder_batch'] = BaseFieldDefinition::create('entity_reference')
+      ->setLabel(t('Preorder Batch'))
+      ->setDescription(t('The preorder batch(es) this order belongs to.'))
+      ->setSetting('target_type', 'preorder_batch')
+      ->setCardinality(-1)
+      ->setDisplayOptions('view', [
+        'label' => 'above',
+        'type' => 'entity_reference_label',
+        'weight' => 15,
+      ])
+      ->setDisplayOptions('form', [
+        'type' => 'entity_reference_autocomplete',
+        'weight' => 15,
+        'settings' => [
+          'match_operator' => 'CONTAINS',
+          'size' => '60',
+          'autocomplete_type' => 'tags',
+          'placeholder' => '',
+        ],
+      ])
+      ->setDisplayConfigurable('form', TRUE)
+      ->setDisplayConfigurable('view', TRUE);
+  }
+
+  return $fields;
+}
 
 /**
  * Implements hook_help().
